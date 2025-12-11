@@ -18,7 +18,7 @@ async def __(message: Message):
         for i in range(message.message_id, message.message_id - 100, -1):
             try:
                 await bot.delete_message(chat_id, i)
-            except:  # noqa: E722
+            except:  
                 pass
     except Exception as e:
         await bot.send_message(chat_id, f'Ошибка при удалении: {e}')

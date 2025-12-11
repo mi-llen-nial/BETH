@@ -9,7 +9,7 @@ from bot.database.request.player_requests import get_or_create_player_for_user
 router = Router()
 
 @router.message(F.text == "👤Профиль")
-async def profile_handler(message: Message):
+async def __(message: Message):
     tg_id = message.from_user.id
     player = await get_or_create_player_for_user(tg_id)
 

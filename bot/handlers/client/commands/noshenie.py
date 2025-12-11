@@ -8,7 +8,7 @@ from bot.database.request.player_requests import get_or_create_player_for_user
 router = Router()
 
 @router.message(F.text == '🤲🏻Ношение')
-async def noshenie_handler(message: Message):
+async def __(message: Message):
     tg_id = message.from_user.id
 
     async with async_session() as session:
