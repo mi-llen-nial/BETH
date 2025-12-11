@@ -26,8 +26,8 @@ BETH — это Telegram‑бот, в котором пользователь с
    ```bash
    python -m venv .venv
    source .venv/bin/activate  # macOS / Linux
-  ```
-3. **Установить зависимости**:
+   ```
+3. **Установить зависимости** (обязательно):
    ```bash
    pip install -r requirements.txt
    ```
