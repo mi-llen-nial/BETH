@@ -1,0 +1,5 @@
+aiogram==3.22.0
+dotenv==0.9.9
+SQLAlchemy==2.0.44
+aiosqlite==0.21.0
+greenlet==3.2.4
