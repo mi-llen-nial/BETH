@@ -11,7 +11,6 @@ def extract_is_premium(tg_user):
         return False
     return bool(value)
 
-
 async def set_user(tg_user):
     async with async_session() as session:
         user = await session.scalar(
