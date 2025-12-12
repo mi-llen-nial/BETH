@@ -1,5 +1,5 @@
 from sqlalchemy import select, update
-from bot.database.models.user import async_session
+from bot.database.models.base import async_session
 from bot.database.models.user import User
 from bot.database.models.players.player import Player
 from bot.database.models.bets.bet import Bet

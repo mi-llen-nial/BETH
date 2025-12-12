@@ -1,15 +1,10 @@
 from sqlalchemy import BigInteger, String, Boolean, DateTime, func
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import expression
 
-from bot.core.config import DATABASE_URL
-from bot.database.models.base import Base
+from bot.database.models.base import Base, engine
 from bot.database.models.promo import PromoCode, PromoRedemption  # регистрируем модели промокодов
 from bot.database.models.shelter import ShelterListing, ShelterSellRequest  # регистрируем модели приюта
-
-engine = create_async_engine(url=DATABASE_URL)
-async_session = async_sessionmaker(engine)
 
 class User(Base):
     __tablename__ = 'users'
@@ -30,5 +25,11 @@ class User(Base):
     player: Mapped['Player'] = relationship(back_populates='user', uselist=False)
 
 async def async_main():
+    """
+    Инициализация схемы БД.
+
+    Используем общий engine из bot.database.models.base,
+    чтобы во всех местах были одинаковые настройки подключения (в том числе SSL).
+    """
     async with engine.begin() as eng:
         await eng.run_sync(Base.metadata.create_all)

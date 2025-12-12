@@ -5,6 +5,7 @@ from typing import Any, Dict
 from aiogram import types
 
 from bot.core.loader import bot, dispathcer, Bot
+from bot.database.requests import set_user
 from bot.handlers.client.commands import (
     start,
     my_bet,
@@ -69,6 +70,20 @@ async def _process_update(update_data: Dict[str, Any]) -> None:
     await _ensure_initialized()
 
     update = types.Update.model_validate(update_data)
+
+    # Глобально следим, чтобы пользователь был зарегистрирован в БД.
+    # Это примерно то же самое, что /start: создаёт User/Player при первом заходе.
+    tg_user = None
+    if update.message and update.message.from_user:
+        tg_user = update.message.from_user
+    elif update.callback_query and update.callback_query.from_user:
+        tg_user = update.callback_query.from_user
+    elif update.inline_query and update.inline_query.from_user:
+        tg_user = update.inline_query.from_user
+
+    if tg_user is not None:
+        await set_user(tg_user)
+
     await dispathcer.feed_update(bot, update)
 
 
