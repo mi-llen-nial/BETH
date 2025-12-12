@@ -1,10 +1,3 @@
-"""
-Entry‑point для деплоя бота в Yandex Cloud Functions через Sourcecraft.
-
-Функция `handler` вызывается на каждый HTTP‑запрос (вебхук Telegram),
-парсит JSON‑апдейт и передаёт его в aiogram‑диспетчер.
-"""
-
 import asyncio
 import json
 from typing import Any, Dict
