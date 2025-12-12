@@ -29,7 +29,6 @@ async def merge_command(message: Message):
     async with async_session() as session:
         player = await get_or_create_player(session, tg_id)
 
-        # 1) Пытаемся найти самую раннюю сессию ожидания
         waiting_session = await session.scalar(
             select(MergeSession)
             .where(
@@ -38,7 +37,6 @@ async def merge_command(message: Message):
             .order_by(MergeSession.created_at)
         )
 
-        # 1а. Если есть сессия ожидания и она создана ДРУГИМ игроком — присоединяемся
         if waiting_session and waiting_session.player1_id != player.id:
             waiting_session.player2_id = player.id
             waiting_session.status = "confirm"
@@ -79,7 +77,6 @@ async def merge_command(message: Message):
             kb.adjust(2)
 
         else:
-            # 1б. Подходящей чужой очереди нет — проверяем, не участвует ли игрок уже в своей сессии
             active_session = await session.scalar(
                 select(MergeSession).where(
                     MergeSession.status.in_(["waiting", "confirm", "select_bet"]),
@@ -109,7 +106,6 @@ async def merge_command(message: Message):
                 )
                 return
 
-            # 2) Вообще никаких активных сессий нет — создаём новую очередь
             new_session = MergeSession(player1_id=player.id, status="waiting")
             session.add(new_session)
             await session.commit()
@@ -120,7 +116,6 @@ async def merge_command(message: Message):
             )
             return
 
-    # Отправляем приглашения обоим игрокам (ветка, когда waiting_session найден и мы присоединились)
     await bot.send_message(
         chat_id=player1_tg_id,
         text=text,
@@ -173,7 +168,6 @@ async def merge_cancel_callback(callback: CallbackQuery):
             else None
         )
 
-        # проверяем, что это участник сессии
         allowed_tg_ids = set()
         if player1:
             user1 = await session.scalar(select(User).where(User.id == player1.user_id))
@@ -418,7 +412,6 @@ async def merge_pick_callback(callback: CallbackQuery):
         await session.refresh(merge_session)
 
         if merge_session.player1_bet_id and merge_session.player2_bet_id:
-            # снова получим tg_id игроков
             player1_user = await session.scalar(
                 select(User)
                 .join_from(
@@ -457,7 +450,6 @@ async def merge_pick_callback(callback: CallbackQuery):
                 )
                 return
 
-            # Подготовим отдельные тексты для победителя и проигравшего
             winner_tg_id = result["winner_tg_id"]
             loser_tg_id = result["loser_tg_id"]
 
