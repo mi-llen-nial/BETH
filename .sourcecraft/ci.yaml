@@ -51,10 +51,11 @@ workflows:
               YC_FUNCTION_RUNTIME: python311
               YC_FUNCTION_ENTRYPOINT: bot.main.handler
               SOURCE_PATH: "./"
-              # Передаём флаги для yc CLI напрямую.
-              # Sourcecraft просто подставит эту строку в конец команды
-              # `yc serverless function version create ... $ENVIRONMENT`.
-              ENVIRONMENT: "--environment BOT_TOKEN=${{ inputs.bot-token }} --environment DATABASE_URL=${{ inputs.database-url }}"
+              # Скрипт деплоя делает: `yc ... --environment $ENVIRONMENT`
+              # Поэтому здесь первая пара без префикса, а для второй явно
+              # добавляем `--environment`, чтобы получилось:
+              #   --environment BOT_TOKEN=... --environment DATABASE_URL=...
+              ENVIRONMENT: "BOT_TOKEN=${{ inputs.bot-token }} --environment DATABASE_URL=${{ inputs.database-url }}"
               PUBLIC: true
             image: cr.yandex/sourcecraft/yc-function:latest
 
