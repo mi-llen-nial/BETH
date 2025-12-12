@@ -23,6 +23,11 @@ from bot.database.models.user import async_main
 
 BOT_INITIALIZED = False
 
+# Создаём один общий event loop для всего жизненного цикла функции.
+# Это важно для asyncpg/SQLAlchemy, чтобы соединения не прыгали между циклами.
+_loop = asyncio.new_event_loop()
+asyncio.set_event_loop(_loop)
+
 
 async def tip_command(bot: Bot) -> None:
     commands = [
@@ -119,8 +124,10 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Не смогли распарсить апдейт — игнорируем
         return {"statusCode": 200, "body": ""}
 
-    # Запускаем асинхронную обработку апдейта
-    asyncio.run(_process_update(update_data))
+    # Запускаем асинхронную обработку апдейта в глобальном event loop.
+    # НЕЛЬЗЯ использовать asyncio.run(), т.к. он создаёт новый цикл на каждый запрос,
+    # а asyncpg/SQLAlchemy ожидают один и тот же цикл для пула соединений.
+    _loop.run_until_complete(_process_update(update_data))
 
     # Фиктивный HTTP‑ответ, которого достаточно для Telegram / Яндекса
     return {"statusCode": 200, "body": ""}
