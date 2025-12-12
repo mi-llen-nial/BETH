@@ -32,6 +32,7 @@ async def set_user(tg_user):
             player = Player(
                 user_id=user.id,
                 rank=0,
+                xp=0,
                 neurons=400,
                 count_bets=1,
                 noshenie_count=0,

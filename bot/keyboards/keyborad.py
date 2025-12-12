@@ -5,7 +5,8 @@ main_keyboard = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text='👤Профиль')],
         [KeyboardButton(text='🤲🏻Ношение'), KeyboardButton(text='🐾Мои беты')],
-        [KeyboardButton(text='🫂Слияние')],
+        [KeyboardButton(text='🧬Слияние'), KeyboardButton(text='🧪Лаборатория')],
+        [KeyboardButton(text='🏯Приют')],
     ],
     resize_keyboard=True,
     input_field_placeholder='Выбери пункт...',

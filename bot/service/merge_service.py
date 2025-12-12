@@ -7,14 +7,32 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bot.database.models.bets.bet import Bet
 from bot.database.models.bets.enums import RarityEnum
 from bot.database.models.players.player import Player
-from bot.service.noshenie_service import get_or_create_player
+from bot.service.noshenie_service import get_or_create_player, MAX_BET_LEVEL
+from bot.service.xp_service import add_xp, MERGE_XP_REWARD
 
-MERGE_COST_NEURONS = 180
+MERGE_COST_NEURONS = 80
 MERGE_REWARD_MIN = 40
 MERGE_REWARD_MAX = 180
 
 RANK_WEIGHT = 0.05
 LEVEL_WEIGHT = 0.1
+
+# Насколько вклад уровня проигравшего Бета
+# влияет на рост уровня победителя в зависимости от редкости.
+RARITY_LEVEL_FACTOR = {
+    RarityEnum.COMMON: 0.08,
+    RarityEnum.RARE: 0.10,
+    RarityEnum.EPIC: 0.12,
+    RarityEnum.LEGENDARY: 0.15,
+}
+
+# Дополнительные множители, если проигравший Бет — легендарный.
+UNDERDOG_MULTIPLIER_VS_LEGENDARY = {
+    RarityEnum.COMMON: 2.0,      # обычный выиграл легу
+    RarityEnum.RARE: 1.6,        # редкий выиграл легу
+    RarityEnum.EPIC: 1.4,        # эпический выиграл легу
+    RarityEnum.LEGENDARY: 1.0,   # лега против леги
+}
 
 
 def normalize_rarity(value: str | RarityEnum) -> RarityEnum:
@@ -25,24 +43,7 @@ def normalize_rarity(value: str | RarityEnum) -> RarityEnum:
         if value in {rarity.value, rarity.name, f"RarityEnum.{rarity.name}"}:
             return rarity
 
-    raise ValueError(f"Неизвестная редкость Бэта: {value!r}")
-
-
-def upgrade_rarity(rarity: RarityEnum) -> RarityEnum | None:
-    order = [
-        RarityEnum.COMMON,
-        RarityEnum.RARE,
-        RarityEnum.EPIC,
-        RarityEnum.LEGENDARY,
-    ]
-    try:
-        idx = order.index(rarity)
-    except ValueError:
-        return None
-
-    if idx >= len(order) - 1:
-        return None
-    return order[idx + 1]
+    raise ValueError(f"Неизвестная редкость Бета: {value!r}")
 
 
 def compute_weight(rank: int, level: int) -> float:
@@ -67,7 +68,7 @@ async def perform_merge(
         return {
             "ok": False,
             "reason": "same_bet",
-            "message": "Нельзя использовать один и тот же Бэт для обоих игроков.",
+            "message": "Нельзя использовать один и тот же Бет для обоих игроков.",
         }
 
     bets_result = await session.scalars(
@@ -78,36 +79,43 @@ async def perform_merge(
     initiator_bet = bets.get(initiator_bet_id)
     partner_bet = bets.get(partner_bet_id)
 
-    if not initiator_bet or not partner_bet:
+    # Беты должны существовать и быть активными
+    if (
+        not initiator_bet
+        or not partner_bet
+        or not initiator_bet.is_active
+        or not partner_bet.is_active
+    ):
         return {
             "ok": False,
             "reason": "bet_not_found",
-            "message": "Один из выбранных Бэтов не найден.",
+            "message": "Один из выбранных Бетов не найден или больше недоступен.",
+        }
+
+    # На всякий случай не даём сливать Бетов, которые находятся в лаборатории
+    if initiator_bet.in_lab or partner_bet.in_lab:
+        return {
+            "ok": False,
+            "reason": "bet_in_lab",
+            "message": "Беты, находящиеся в лаборатории, нельзя отправлять на слияние.",
         }
 
     if initiator_bet.owner_id != initiator_player.id:
         return {
             "ok": False,
             "reason": "bet_owner_mismatch",
-            "message": "Выбранный Бэт инициатора больше ему не принадлежит.",
+            "message": "Выбранный Бет инициатора больше ему не принадлежит.",
         }
 
     if partner_bet.owner_id != partner_player.id:
         return {
             "ok": False,
             "reason": "bet_owner_mismatch",
-            "message": "Выбранный Бэт второго игрока больше ему не принадлежит.",
+            "message": "Выбранный Бет второго игрока больше ему не принадлежит.",
         }
 
     initiator_rarity = normalize_rarity(initiator_bet.rarity)
     partner_rarity = normalize_rarity(partner_bet.rarity)
-
-    if initiator_rarity == RarityEnum.LEGENDARY or partner_rarity == RarityEnum.LEGENDARY:
-        return {
-            "ok": False,
-            "reason": "legendary_not_allowed",
-            "message": "Легендарных Бэтов нельзя отправлять на слияние.",
-        }
 
     if initiator_player.neurons < MERGE_COST_NEURONS or partner_player.neurons < MERGE_COST_NEURONS:
         return {
@@ -146,13 +154,18 @@ async def perform_merge(
         loser_bet = initiator_bet
         loser_rarity = initiator_rarity
 
-    upgraded_rarity = upgrade_rarity(winner_rarity)
-    if upgraded_rarity is None:
-        return {
-            "ok": False,
-            "reason": "cannot_upgrade",
-            "message": "Редкость этого Бэта нельзя повысить.",
-        }
+    # Считаем, на сколько уровней вырастет Бет-победитель.
+    loser_level = loser_bet.level or 0
+    rarity_factor = RARITY_LEVEL_FACTOR.get(loser_rarity, 0.1)
+    base_gain = max(1, int(round(loser_level * rarity_factor)))
+
+    multiplier = 1.0
+    if loser_rarity == RarityEnum.LEGENDARY:
+        multiplier = UNDERDOG_MULTIPLIER_VS_LEGENDARY.get(winner_rarity, 1.0)
+
+    level_gain = max(1, int(round(base_gain * multiplier)))
+    winner_old_level = winner_bet.level or 0
+    winner_new_level = min(winner_old_level + level_gain, MAX_BET_LEVEL)
 
     winner_player.neurons -= MERGE_COST_NEURONS
     loser_player.neurons -= MERGE_COST_NEURONS
@@ -164,8 +177,15 @@ async def perform_merge(
     winner_player.neurons += winner_neurons_gain
     loser_player.neurons += loser_neurons_gain
 
-    winner_bet.rarity = upgraded_rarity.value
+    winner_bet.level = winner_new_level
     loser_bet.is_active = False
+
+    # Опыт за участие в слиянии — обоим игрокам
+    winner_rank_before = winner_player.rank
+    loser_rank_before = loser_player.rank
+
+    winner_rank_ups = add_xp(winner_player, MERGE_XP_REWARD)
+    loser_rank_ups = add_xp(loser_player, MERGE_XP_REWARD)
 
     await session.commit()
     await session.refresh(winner_player)
@@ -180,13 +200,24 @@ async def perform_merge(
         "winner_bet_id": winner_bet.id,
         "loser_bet_id": loser_bet.id,
         "winner_bet_name": winner_bet.name,
-        "winner_old_rarity": winner_rarity,
-        "winner_new_rarity": upgraded_rarity,
+        "winner_old_level": winner_old_level,
+        "winner_new_level": winner_new_level,
         "loser_bet_name": loser_bet.name,
-        "loser_old_rarity": loser_rarity,
+        "loser_level": loser_level,
+        "winner_rarity": winner_rarity,
+        "loser_rarity": loser_rarity,
+        "level_gain": winner_new_level - winner_old_level,
         "merge_cost": MERGE_COST_NEURONS,
         "winner_neurons_gain": winner_neurons_gain,
         "loser_neurons_gain": loser_neurons_gain,
         "winner_total_neurons": winner_player.neurons,
         "loser_total_neurons": loser_player.neurons,
+        "winner_xp_gained": MERGE_XP_REWARD,
+        "loser_xp_gained": MERGE_XP_REWARD,
+        "winner_rank_before": winner_rank_before,
+        "winner_rank_after": winner_player.rank,
+        "winner_rank_ups": winner_rank_ups,
+        "loser_rank_before": loser_rank_before,
+        "loser_rank_after": loser_player.rank,
+        "loser_rank_ups": loser_rank_ups,
     }

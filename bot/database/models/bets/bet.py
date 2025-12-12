@@ -1,7 +1,9 @@
 from datetime import datetime
+
 from sqlalchemy import Integer, String, DateTime, func, ForeignKey, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import expression
+
 from bot.database.models.base import Base
 
 
@@ -21,6 +23,24 @@ class Bet(Base):
         Boolean,
         nullable=False,
         server_default=expression.true(),
+    )
+    in_lab: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=expression.false(),
+    )
+    in_shelter: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=expression.false(),
+    )
+    lab_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    lab_ends_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

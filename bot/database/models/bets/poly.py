@@ -5,7 +5,7 @@ from bot.database.models.bets.bet import Bet
 POLY_CONFIG = {
     'code': BetCode.POLY,
     'display_name': 'Поли',
-    'description': 'Любопытный неоновый Бэт, который любит слияния.',
+    'description': 'Любопытный неоновый Бет, который любит слияния.',
 }
 
 def create_poly(owner_id: int, rarity: RarityEnum) -> Bet:

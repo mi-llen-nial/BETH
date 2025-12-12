@@ -2,14 +2,17 @@
 import random
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any
-from sqlalchemy import select
+
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from bot.database.models.players.player import Player
 from bot.database.models.bets.bet import Bet
 from bot.database.models.bets.enums import RarityEnum
 from bot.database.models.user import User
+from bot.service.xp_service import add_xp, NOSHENIE_XP_REWARD
 
-NOSHENIE_COOLDOWN = timedelta(hours=0.1)
+NOSHENIE_COOLDOWN = timedelta(hours=0.0)
 NOSHENIE_COST_NEURONS = 140
 NEURON_REWARD_MIN = 10
 NEURON_REWARD_MAX = 25
@@ -18,11 +21,24 @@ BET_LEVEL_STEP = 5
 MAX_BET_LEVEL = 60
 
 BET_NAMES_BY_RARITY = {
-    RarityEnum.COMMON: ["Маршл", "Тоша."],
-    RarityEnum.RARE: ["Эмилия"],
-    RarityEnum.EPIC: ["Аминия"],
-    RarityEnum.LEGENDARY: ["Поли"],
+    RarityEnum.COMMON: ["Маршал", "Тоша", "Эмма", "Георг", "Тула", "Зоня", "Тути"],
+    RarityEnum.RARE: ["Эмилия", "Сино", "Том", "Элин"],
+    RarityEnum.EPIC: ["Аминия", "Тоцерк", "Крона"],
+    RarityEnum.LEGENDARY: ["Поли", "Cулла"],
 }
+
+
+async def _get_active_bets_count(session: AsyncSession, player_id: int) -> int:
+    """
+    Подсчитать текущее количество Бетов, которые реально принадлежат игроку.
+    Учитываем только активных Бетов (проигранные в слиянии не считаем).
+    """
+    value = await session.scalar(
+        select(func.count())
+        .select_from(Bet)
+        .where(Bet.owner_id == player_id, Bet.is_active == True)
+    )
+    return int(value or 0)
 
 async def get_or_create_player(session, tg_id: int) -> Player:
     user = await session.scalar(
@@ -41,7 +57,8 @@ async def get_or_create_player(session, tg_id: int) -> Player:
         player = Player(
             user_id=user.id,
             rank=0,
-            neurons=0,
+            xp=0,
+            neurons=400,
             count_bets=0,
             noshenie_count=0,
         )
@@ -84,6 +101,7 @@ async def do_noshenie(session: AsyncSession, tg_id: int) -> Dict[str, Any]:
         if delta < NOSHENIE_COOLDOWN:
             remaining = NOSHENIE_COOLDOWN - delta
             minutes_left = int(remaining.total_seconds() // 60) + 1
+            bets_count = await _get_active_bets_count(session, player.id)
             return {
                 "ok": False,
                 "reason": "cooldown",
@@ -97,10 +115,21 @@ async def do_noshenie(session: AsyncSession, tg_id: int) -> Dict[str, Any]:
                 "neurons_spent": 0,
                 "neurons_reward": 0,
                 "total_neurons": player.neurons,
-                "bets_count": player.count_bets,
+                "bets_count": bets_count,
+                "xp_gained": 0,
+                "rank": player.rank,
             }
 
-    if player.neurons < NOSHENIE_COST_NEURONS:
+    # Проверяем, доступно ли бесплатное ношение на сегодня
+    is_free_available = (
+        player.last_free_noshenie_at is None
+        or player.last_free_noshenie_at.date() < now.date()
+    )
+    use_free = is_free_available
+
+    # Если бесплатное уже использовано и нейронов не хватает — не даём ношение
+    if not use_free and player.neurons < NOSHENIE_COST_NEURONS:
+        bets_count = await _get_active_bets_count(session, player.id)
         return {
             "ok": False,
             "reason": "not_enough_neurons",
@@ -111,10 +140,13 @@ async def do_noshenie(session: AsyncSession, tg_id: int) -> Dict[str, Any]:
             "bet_name": None,
             "bet_level": None,
             "is_new_bet": None,
+            "is_free": False,
             "neurons_spent": 0,
             "neurons_reward": 0,
             "total_neurons": player.neurons,
-            "bets_count": player.count_bets,
+            "bets_count": bets_count,
+            "xp_gained": 0,
+            "rank": player.rank,
         }
 
     if player.noshenie_count >= LEGENDARY_PITY_THRESHOLD - 1:
@@ -133,6 +165,7 @@ async def do_noshenie(session: AsyncSession, tg_id: int) -> Dict[str, Any]:
         select(Bet).where(
             Bet.owner_id == player.id,
             Bet.name == bet_name,
+            Bet.is_active == True,  # используем только активных Бетов
         )
     )
 
@@ -150,15 +183,25 @@ async def do_noshenie(session: AsyncSession, tg_id: int) -> Dict[str, Any]:
         is_new_bet = False
 
     neurons_reward = roll_neuron_reward()
-    neurons_spent = NOSHENIE_COST_NEURONS
+    neurons_spent = 0 if use_free else NOSHENIE_COST_NEURONS
 
     player.neurons = player.neurons - neurons_spent + neurons_reward
     player.count_bets += 1
     player.last_noshenie_at = now
 
+    if use_free:
+        player.last_free_noshenie_at = now
+
+    # Опыт за ношение
+    xp_gained = NOSHENIE_XP_REWARD
+    rank_before = player.rank
+    rank_ups = add_xp(player, xp_gained)
+
     await session.commit()
     await session.refresh(player)
     await session.refresh(bet)
+
+    bets_count = await _get_active_bets_count(session, player.id)
 
     return {
         "ok": True,
@@ -170,8 +213,13 @@ async def do_noshenie(session: AsyncSession, tg_id: int) -> Dict[str, Any]:
         "bet_name": bet_name,
         "bet_level": bet_level,
         "is_new_bet": is_new_bet,
+        "is_free": use_free,
         "neurons_spent": neurons_spent,
         "neurons_reward": neurons_reward,
         "total_neurons": player.neurons,
-        "bets_count": player.count_bets,
+        "bets_count": bets_count,
+        "xp_gained": xp_gained,
+        "rank": player.rank,
+        "rank_before": rank_before,
+        "rank_ups": rank_ups,
     }

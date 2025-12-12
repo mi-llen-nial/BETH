@@ -22,7 +22,7 @@ router = Router()
 
 
 @router.message(Command("merge"))
-@router.message(F.text == "🫂Слияние")
+@router.message(F.text == "🧬Слияние")
 async def merge_command(message: Message):
     tg_id = message.from_user.id
 
@@ -62,14 +62,29 @@ async def merge_command(message: Message):
             player1_tg_id = player1_user.tg_id
             player2_tg_id = player2_user.tg_id
 
-            text = (
-                "Найден партнёр для слияния.\n\n"
-                "Стоимость: {cost} нейронов с каждого.\n"
-                "Один из вас повысит редкость выбранного Бэта,\n"
-                "оба получат случайное количество нейронов\n"
-                "(проигравший — x2).\n\n"
+            partner_for_p1 = (
+                player2_user.first_name or player2_user.username or "игрок"
+            )
+            partner_for_p2 = (
+                player1_user.first_name or player1_user.username or "игрок"
+            )
+
+            text_template = (
+                "👥 Найден партнёр для слияния: {partner}.\n\n"
+                "Стоимость: {cost} нейронов с каждого.\n\n"
+                "Только один из вас повысит уровень выбранного Бета!\n"
+                "Но оба получат случайное количество нейронов.\n\n"
                 "Подтвердить участие в слиянии?"
-            ).format(cost=MERGE_COST_NEURONS)
+            )
+
+            text_for_p1 = text_template.format(
+                partner=partner_for_p1,
+                cost=MERGE_COST_NEURONS,
+            )
+            text_for_p2 = text_template.format(
+                partner=partner_for_p2,
+                cost=MERGE_COST_NEURONS,
+            )
 
             kb = InlineKeyboardBuilder()
             kb.button(text="Да", callback_data=f"merge_confirm:{session_id}:yes")
@@ -111,19 +126,19 @@ async def merge_command(message: Message):
             await session.commit()
 
             await message.answer(
-                "Ты в очереди на слияние.\n"
-                "Как только найдётся партнёр, ты получишь уведомление."
+                "Ты в очереди на слияние...⏳\n"
+                "Как только найдётся партнёр, ты получишь уведомление"
             )
             return
 
     await bot.send_message(
         chat_id=player1_tg_id,
-        text=text,
+        text=text_for_p1,
         reply_markup=kb.as_markup(),
     )
     await bot.send_message(
         chat_id=player2_tg_id,
-        text=text,
+        text=text_for_p2,
         reply_markup=kb.as_markup(),
     )
 
@@ -145,7 +160,7 @@ async def merge_cancel_callback(callback: CallbackQuery):
     if decision == "no":
         await callback.answer("Слияние остаётся активным.")
         await callback.message.edit_text(
-            "Слияние не было отменено.", reply_markup=None
+            "Слияние не было отменено", reply_markup=None
         )
         return
 
@@ -295,20 +310,18 @@ async def merge_confirm_callback(callback: CallbackQuery):
                     select(Bet).where(
                         Bet.owner_id == player.id,
                         Bet.is_active == True,
+                        Bet.in_lab == False,
+                        Bet.in_shelter == False,
                     )
                 )
-                bets = [
-                    bet
-                    for bet in bets_result
-                    if normalize_rarity(bet.rarity) != RarityEnum.LEGENDARY
-                ]
+                bets = list(bets_result)
 
                 if not bets:
                     await bot.send_message(
                         chat_id=(
                             player1_user.tg_id if slot == 1 else player2_user.tg_id
                         ),
-                        text="У тебя нет подходящих Бэтов для слияния.",
+                        text="У тебя нет подходящих Бетов для слияния.",
                     )
                     continue
 
@@ -326,7 +339,7 @@ async def merge_confirm_callback(callback: CallbackQuery):
 
                 await bot.send_message(
                     chat_id=target_tg_id,
-                    text="Выбери Бэта для слияния:",
+                    text="Выбери Бета для слияния:",
                     reply_markup=kb.as_markup(),
                 )
 
@@ -373,7 +386,7 @@ async def merge_pick_callback(callback: CallbackQuery):
             select(User).where(User.id == player.user_id)
         )
         if not user_row or user_row.tg_id != user_tg_id:
-            await callback.answer("Это не твой выбор Бэта.", show_alert=True)
+            await callback.answer("Это не твой выбор Бета.", show_alert=True)
             return
 
         bet = await session.scalar(
@@ -381,18 +394,13 @@ async def merge_pick_callback(callback: CallbackQuery):
                 Bet.id == bet_id,
                 Bet.owner_id == player.id,
                 Bet.is_active == True,
+                Bet.in_lab == False,
+                Bet.in_shelter == False,
             )
         )
 
         if not bet:
-            await callback.answer("Этот Бэт не найден.", show_alert=True)
-            return
-
-        if normalize_rarity(bet.rarity) == RarityEnum.LEGENDARY:
-            await callback.answer(
-                "Легендарных Бэтов нельзя отправлять на слияние.",
-                show_alert=True,
-            )
+            await callback.answer("Этот Бет не найден.", show_alert=True)
             return
 
         if slot == 1:
@@ -402,9 +410,9 @@ async def merge_pick_callback(callback: CallbackQuery):
 
         await session.commit()
 
-        await callback.answer("Бэт выбран для слияния.")
+        await callback.answer("Бет выбран для слияния.")
         await callback.message.edit_text(
-            "Ты выбрал Бэта для слияния.\n"
+            "Ты выбрал Бета для слияния.\n"
             "Ожидаем выбор второго игрока.",
             reply_markup=None,
         )
@@ -461,20 +469,27 @@ async def merge_pick_callback(callback: CallbackQuery):
                 loser_user = player1_user
 
             winner_name = winner_user.first_name or winner_user.username or "игроком"
+            loser_name = loser_user.first_name or loser_user.username or "игроком"
+
+            winner_xp = result.get("winner_xp_gained", 0)
+            loser_xp = result.get("loser_xp_gained", 0)
 
             winner_text = (
                 "Слияние завершено успешно!🌟\n\n"
                 f"Победа за {winner_name}\n"
-                f"Бет <b>{result['winner_bet_name']}</b> повысил редкость до "
-                f"<b>{result['winner_new_rarity'].value}</b>!\n"
-                f"Вы получили {result['winner_neurons_gain']} нейронов"
+                f"Проиграл {loser_name}\n\n"
+                f"Бет <b>{result['winner_bet_name']}</b> повысил уровень до "
+                f"<b>{result['winner_new_level']}</b>!\n"
+                f"Вы получили {result['winner_neurons_gain']} нейронов\n"
+                f"Опыт: +{winner_xp}"
             )
 
             loser_text = (
                 "Слияние завершено успешно!🌟\n\n"
                 f"Победа за {winner_name}\n"
                 f"Ваш бет <b>{result['loser_bet_name']}</b> проигран!\n"
-                f"Вы получили {result['loser_neurons_gain']} нейронов"
+                f"Вы получили {result['loser_neurons_gain']} нейронов\n"
+                f"Опыт: +{loser_xp}"
             )
 
             await bot.send_message(
@@ -487,6 +502,27 @@ async def merge_pick_callback(callback: CallbackQuery):
                 text=loser_text,
                 parse_mode="HTML",
             )
+
+            winner_rank_ups = result.get("winner_rank_ups", 0)
+            loser_rank_ups = result.get("loser_rank_ups", 0)
+
+            if winner_rank_ups and result.get("winner_rank_before") is not None and result.get("winner_rank_after") is not None:
+                await bot.send_message(
+                    chat_id=winner_tg_id,
+                    text=(
+                        f"🐦‍🔥ВАШ РАНГ ПОВЫШЕН: "
+                        f"{result['winner_rank_before']} -> {result['winner_rank_after']}🐦‍🔥"
+                    ),
+                )
+
+            if loser_rank_ups and result.get("loser_rank_before") is not None and result.get("loser_rank_after") is not None:
+                await bot.send_message(
+                    chat_id=loser_tg_id,
+                    text=(
+                        f"🐦‍🔥ВАШ РАНГ ПОВЫШЕН: "
+                        f"{result['loser_rank_before']} -> {result['loser_rank_after']}🐦‍🔥"
+                    ),
+                )
 
             merge_session.status = "completed"
             await session.commit()
