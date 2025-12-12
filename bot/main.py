@@ -1,11 +1,17 @@
-import asyncio
+"""
+Entry‑point для деплоя бота в Yandex Cloud Functions через Sourcecraft.
 
-from aiohttp import web
+Функция `handler` вызывается на каждый HTTP‑запрос (вебхук Telegram),
+парсит JSON‑апдейт и передаёт его в aiogram‑диспетчер.
+"""
+
+import asyncio
+import json
+from typing import Any, Dict
+
 from aiogram import types
-from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 
 from bot.core.loader import bot, dispathcer, Bot
-from bot.core.config import WEBHOOK_URL, WEBHOOK_PATH, WEBAPP_HOST, WEBAPP_PORT
 from bot.handlers.client.commands import (
     start,
     my_bet,
@@ -17,13 +23,14 @@ from bot.handlers.client.commands import (
     shelter,
 )
 from bot.handlers.admin.commands import clear
-from bot.database.models.user import async_main
 from bot.database.models.base import Base, engine
-from bot.database.models.players import player
-from bot.database.models.bets import bet
+from bot.database.models.user import async_main
 
 
-async def tip_command(bot: Bot):
+BOT_INITIALIZED = False
+
+
+async def tip_command(bot: Bot) -> None:
     commands = [
         types.BotCommand(command="start", description="Играть с BETH"),
         types.BotCommand(command="about", description="Описание про BETH"),
@@ -46,7 +53,15 @@ def setup_routers() -> None:
     dispathcer.include_router(noshenie.router)
 
 
-async def run_polling() -> None:
+async def _ensure_initialized() -> None:
+    """
+    Ленивая инициализация БД, роутеров и команд.
+    Вызывается перед обработкой каждого апдейта, но выполняется один раз.
+    """
+    global BOT_INITIALIZED
+    if BOT_INITIALIZED:
+        return
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -54,44 +69,50 @@ async def run_polling() -> None:
     setup_routers()
     await tip_command(bot)
 
-    print("Start success (polling)")
-    await dispathcer.start_polling(bot)
+    BOT_INITIALIZED = True
 
 
-async def create_webhook_app() -> web.Application:
+async def _process_update(update_data: Dict[str, Any]) -> None:
+    await _ensure_initialized()
+
+    update = types.Update.model_validate(update_data)
+    await dispathcer.feed_update(bot, update)
+
+
+def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
-    Создаём aiohttp‑приложение для работы через вебхуки.
-    Эта функция используется как entrypoint для web.run_app().
+    Синхронный entry‑point для Yandex Cloud Function.
+
+    Ожидаемый формат `event` при HTTP‑триггере:
+    {
+        "body": "<raw JSON update from Telegram>",
+        ...
+    }
     """
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Достаём тело запроса
+    body = event.get("body", event)
 
-    await async_main()
-    setup_routers()
-    await tip_command(bot)
-
-    app = web.Application()
-    SimpleRequestHandler(dispathcer, bot).register(app, path=WEBHOOK_PATH)
-    setup_application(app, dispathcer, bot=bot)
-
-    if not WEBHOOK_URL:
-        raise RuntimeError(
-            "WEBHOOK_URL не задан, но выбран режим вебхуков. "
-            "Установи переменную окружения WEBHOOK_URL."
-        )
-
-    await bot.set_webhook(WEBHOOK_URL)
-    print(f"Start success (webhook) on {WEBAPP_HOST}:{WEBAPP_PORT}, path={WEBHOOK_PATH}")
-    return app
-
-
-if __name__ == "__main__":
     try:
-        if WEBHOOK_URL:
-            # Режим вебхуков (для продакшн‑деплоя, например на Sourcecraft)
-            web.run_app(create_webhook_app(), host=WEBAPP_HOST, port=WEBAPP_PORT)
+        if isinstance(body, (bytes, bytearray)):
+            body = body.decode("utf-8")
+
+        if isinstance(body, str):
+            body = body.strip()
+            if not body:
+                return {"statusCode": 200, "body": ""}
+            update_data = json.loads(body)
+        elif isinstance(body, dict) and "update_id" in body:
+            # В некоторых случаях апдейт может прилететь сразу как dict
+            update_data = body
         else:
-            # Локальная разработка — long polling
-            asyncio.run(run_polling())
-    except KeyboardInterrupt:
-        print("Exit success")
+            # Непонятный формат — просто отвечаем 200, чтобы Telegram не ретраил
+            return {"statusCode": 200, "body": ""}
+    except Exception:
+        # Не смогли распарсить апдейт — игнорируем
+        return {"statusCode": 200, "body": ""}
+
+    # Запускаем асинхронную обработку апдейта
+    asyncio.run(_process_update(update_data))
+
+    # Фиктивный HTTP‑ответ, которого достаточно для Telegram / Яндекса
+    return {"statusCode": 200, "body": ""}
