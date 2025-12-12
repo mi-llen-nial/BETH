@@ -1,8 +1,7 @@
-import logging
 import asyncio
 from aiogram import types
 from bot.core.loader import bot, dispathcer, Bot
-from bot.handlers.client.commands import start, my_bet, general, profile, noshenie
+from bot.handlers.client.commands import start, my_bet, general, profile, noshenie, merge
 from bot.handlers.admin.commands import clear
 from bot.database.models.user import async_main
 from bot.database.models.base import Base, engine
@@ -27,6 +26,7 @@ async def main():
     dispathcer.include_router(start.router)
     dispathcer.include_router(clear.router)
     dispathcer.include_router(my_bet.router)
+    dispathcer.include_router(merge.router)
     dispathcer.include_router(general.router)
     dispathcer.include_router(profile.router)
     dispathcer.include_router(noshenie.router)
@@ -40,5 +40,4 @@ if __name__ == '__main__':
         asyncio.run(main())
     except KeyboardInterrupt:
         print('Exit success')
-
 

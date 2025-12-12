@@ -1,14 +1,18 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 
-main_keyboard = ReplyKeyboardMarkup(keyboard=[
-    [KeyboardButton(text='👤Профиль')],
-    [KeyboardButton(text='🤲🏻Ношение'), KeyboardButton(text='🐾Мои беты')]
-],
+main_keyboard = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text='👤Профиль')],
+        [KeyboardButton(text='🤲🏻Ношение'), KeyboardButton(text='🐾Мои беты')],
+        [KeyboardButton(text='🫂Слияние')],
+    ],
     resize_keyboard=True,
-    input_field_placeholder='Выбери пункт...')
+    input_field_placeholder='Выбери пункт...',
+)
 
 command = ['Настройки', 'Cтатистка', 'Мой аккаунт', 'Конфигурация']
+
 
 async def reply_btns():
     keyboard = ReplyKeyboardBuilder()

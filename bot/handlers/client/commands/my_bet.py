@@ -17,7 +17,7 @@ async def my_bets_handler(message: Message):
     async with async_session() as session:
         result = await session.scalars(
             select(Bet)
-            .where(Bet.owner_id == player.id)
+            .where(Bet.owner_id == player.id, Bet.is_active == True)
             .order_by(Bet.rarity, Bet.level.desc(), Bet.created_at)
         )
         bets = result.all()
@@ -55,7 +55,11 @@ async def bet_details_callback(callback: CallbackQuery):
 
     async with async_session() as session:
         bet = await session.scalar(
-            select(Bet).where(Bet.id == bet_id, Bet.owner_id == player.id)
+            select(Bet).where(
+                Bet.id == bet_id,
+                Bet.owner_id == player.id,
+                Bet.is_active == True,
+            )
         )
 
     if not bet:
