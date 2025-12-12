@@ -13,11 +13,6 @@ FALLBACK_QUOTES = [
 
 
 async def fetch_random_quote() -> str:
-    """
-    Получить случайную цитату из внешнего сервиса.
-    Если запрос не удался — вернуть фоловерную локальную цитату,
-    чтобы текст у Бэта был всегда.
-    """
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(QUOTE_API_URL, timeout=5) as resp:
