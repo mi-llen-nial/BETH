@@ -1,7 +1,7 @@
 from aiogram import Router, F
 from aiogram.types import Message
 
-from bot.database.models.user import async_session
+from bot.database.models.base import async_session
 from bot.service.noshenie_service import do_noshenie
 from bot.service.quote_service import fetch_random_quote
 
