@@ -3,7 +3,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-TOKEN = os.getenv("TOKEN")
+# Локально токен читается из TOKEN,
+# в облаке (Sourcecraft / Yandex Functions) — из BOT_TOKEN.
+TOKEN = os.getenv("TOKEN") or os.getenv("BOT_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Настройки вебхука (опционально, используются при деплое)
@@ -13,8 +15,7 @@ WEBAPP_HOST = os.getenv("WEBAPP_HOST", "0.0.0.0")
 WEBAPP_PORT = int(os.getenv("PORT", os.getenv("WEBAPP_PORT", "8080")))
 
 if not TOKEN:
-    raise ValueError("TOKEN не найден")
+    raise ValueError("TOKEN/BOT_TOKEN не найден")
 if not DATABASE_URL:
-    raise ValueError("База данных не найдена")
-
+    raise ValueError("DATABASE_URL (строка подключения к БД) не найдена")
 

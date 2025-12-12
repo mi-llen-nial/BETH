@@ -25,9 +25,14 @@ workflows:
         type: string
         default: "YOUR_TG_BOT_TOKEN"
         description: Your Telegram bot token from BotFather
+      database-url:
+        type: string
+        default: ""
+        description: PostgreSQL DATABASE_URL for production (postgresql+asyncpg://user:pass@host:port/dbname)
     env:
       YC_BOT_NAME: ${{ inputs.bot-username }}
       TG_BOT_TOKEN: ${{ inputs.bot-token }}
+      DB_URL: ${{ inputs.database-url }}
     tasks:
       - name: deploy-tg-backend-task
         cubes: 
@@ -46,7 +51,9 @@ workflows:
               YC_FUNCTION_RUNTIME: python311
               YC_FUNCTION_ENTRYPOINT: bot.main.handler
               SOURCE_PATH: "./"
-              ENVIRONMENT: "BOT_TOKEN=${{ inputs.bot-token }}"
+              ENVIRONMENT: |
+                BOT_TOKEN=${{ inputs.bot-token }}
+                DATABASE_URL=${{ inputs.database-url }}
               PUBLIC: true
             image: cr.yandex/sourcecraft/yc-function:latest
 
