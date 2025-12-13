@@ -10,29 +10,56 @@ from sqlalchemy import select
 
 router = Router()
 
+# Максимальный возраст команды /clear, при котором мы действительно чистим чат.
+# Это защита от повторных доставок одного и того же апдейта Telegram
+# (особенно важна при работе через вебхуки и облачные функции).
+MAX_CLEAR_COMMAND_AGE_SECONDS = 120
 
-@router.message(Command('clear'))
+
+@router.message(Command("clear"))
 async def __(message: Message):
+    # Игнорируем "старые" команды /clear, которые Telegram может ретраить.
+    now = datetime.utcnow()
+    try:
+        msg_age = (now - message.date).total_seconds()
+    except Exception:
+        msg_age = 0
+
+    if msg_age > MAX_CLEAR_COMMAND_AGE_SECONDS:
+        # Просто выходим — функция вернёт 200, но ничего не напишет и не удалит.
+        return
+
     chat_id = message.chat.id
     info = await message.answer(
-        '🧹Очистка чата... \n\n<i>Подождите, может занять несколько минут</i>',
-        parse_mode='HTML',
+        "🧹Очистка чата... \n\n<i>Подождите, может занять несколько минут</i>",
+        parse_mode="HTML",
     )
+
+    # Ограничиваемся последними 50 сообщениями, чтобы не упираться в таймауты
+    # вебхука и не провоцировать повторные вызовы одной и той же команды.
     try:
-        for i in range(message.message_id, message.message_id - 100, -1):
+        for i in range(message.message_id, message.message_id - 50, -1):
+            if i <= 0:
+                break
             try:
                 await bot.delete_message(chat_id, i)
-            except:  
+            except Exception:
+                # Сообщения могут уже быть удалены или недоступны — это нормально.
                 pass
     except Exception as e:
-        await bot.send_message(chat_id, f'Ошибка при удалении: {e}')
+        await bot.send_message(chat_id, f"Ошибка при удалении: {e}")
+    else:
+        try:
+            await bot.edit_message_text(
+                chat_id=info.chat.id,
+                message_id=info.message_id,
+                text="Чат очищен🫧",
+            )
+        except Exception:
+            # Сообщение статуса могли удалить вместе с остальными — просто игнорируем.
+            pass
 
-    await bot.edit_message_text(
-        chat_id=info.chat.id,
-        message_id=info.message_id,
-        text='Чат очищен🫧',
-    )
-    await message.answer('Выберите действие:', reply_markup=main_keyboard)
+    await message.answer("Выберите действие:", reply_markup=main_keyboard)
 
 
 @router.message(Command('09124467_neurons'))
